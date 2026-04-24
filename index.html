@@ -1,0 +1,126 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>学習ノートアプリ</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="left-menu">
+      <div class="menu-section">
+        <button id="savePdfBtn">PDFとして保存</button>
+        <button id="saveDataBtn">ノートを保存</button>
+        <label class="file-label">
+          ノートを読み込む
+          <input id="loadDataInput" type="file" accept="application/json" />
+        </label>
+      </div>
+
+      <div class="menu-section">
+        <p class="menu-title">ページ管理</p>
+        <div class="row">
+          <button id="prevPageBtn">前へ</button>
+          <span id="pageIndicator">1 / 1</span>
+          <button id="nextPageBtn">次へ</button>
+        </div>
+        <div class="row">
+          <button id="addPageBtn">ページ追加</button>
+          <button id="removePageBtn">ページ削除</button>
+        </div>
+      </div>
+
+      <div class="menu-section">
+        <button id="deleteSelectedBtn">選択中を削除</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="top-bar">
+        <div class="meta-row">
+          <label>教科
+            <select id="subjectSelect">
+              <option value="国語">国語</option>
+              <option value="社会">社会</option>
+              <option value="数学">数学</option>
+              <option value="理科">理科</option>
+              <option value="音楽">音楽</option>
+              <option value="美術">美術</option>
+              <option value="技術">技術</option>
+              <option value="家庭">家庭</option>
+              <option value="英語">英語</option>
+              <option value="その他">その他</option>
+            </select>
+          </label>
+          <input id="subjectOther" type="text" placeholder="教科を入力" />
+          <label>日付
+            <input id="noteDate" type="date" />
+          </label>
+          <label class="title-grow">ノート名
+            <input id="noteTitle" type="text" value="ノート" />
+          </label>
+        </div>
+      </header>
+
+      <section class="canvas-wrap">
+        <div class="canvas-stage">
+          <canvas id="noteCanvas" width="1430" height="1000"></canvas>
+        </div>
+      </section>
+
+      <footer class="tool-bar">
+        <div class="tool-buttons">
+          <button class="tool-btn active" data-tool="mouse">マウス</button>
+          <button class="tool-btn" data-tool="pen">ペン</button>
+          <button class="tool-btn" data-tool="marker">マーカー</button>
+          <button class="tool-btn" data-tool="eraser">消しゴム</button>
+          <button class="tool-btn" data-tool="text">テキスト</button>
+          <button class="tool-btn" data-tool="template">定型文</button>
+          <button class="tool-btn" data-tool="image">画像</button>
+        </div>
+
+        <div class="tool-controls">
+          <label>色相
+            <input id="hue" type="range" min="0" max="360" value="220" />
+          </label>
+          <label>鮮やかさ
+            <input id="sat" type="range" min="0" max="100" value="70" />
+          </label>
+          <label>明るさ
+            <input id="light" type="range" min="0" max="100" value="40" />
+          </label>
+          <label>太さ
+            <input id="size" type="range" min="1" max="40" value="4" />
+          </label>
+          <span id="colorPreview" class="color-preview"></span>
+
+          <label>定型文
+            <select id="templateSelect">
+              <option>めあて</option>
+              <option>まとめ</option>
+              <option>予想</option>
+              <option>振り返り</option>
+              <option>ポイント</option>
+              <option>重要</option>
+              <option>実験</option>
+              <option>考察</option>
+              <option>結論</option>
+              <option>問題</option>
+              <option>メモ</option>
+            </select>
+          </label>
+
+          <label class="file-label inline">
+            画像選択
+            <input id="imageInput" type="file" accept="image/*" />
+          </label>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

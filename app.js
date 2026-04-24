@@ -1,0 +1,745 @@
+﻿const canvas = document.getElementById("noteCanvas");
+const ctx = canvas.getContext("2d");
+
+const toolButtons = [...document.querySelectorAll(".tool-btn")];
+const hueInput = document.getElementById("hue");
+const satInput = document.getElementById("sat");
+const lightInput = document.getElementById("light");
+const sizeInput = document.getElementById("size");
+const colorPreview = document.getElementById("colorPreview");
+const templateSelect = document.getElementById("templateSelect");
+const imageInput = document.getElementById("imageInput");
+const subjectSelect = document.getElementById("subjectSelect");
+const subjectOther = document.getElementById("subjectOther");
+const noteDate = document.getElementById("noteDate");
+const noteTitle = document.getElementById("noteTitle");
+
+const pageIndicator = document.getElementById("pageIndicator");
+const prevPageBtn = document.getElementById("prevPageBtn");
+const nextPageBtn = document.getElementById("nextPageBtn");
+const addPageBtn = document.getElementById("addPageBtn");
+const removePageBtn = document.getElementById("removePageBtn");
+
+const savePdfBtn = document.getElementById("savePdfBtn");
+const saveDataBtn = document.getElementById("saveDataBtn");
+const loadDataInput = document.getElementById("loadDataInput");
+const deleteSelectedBtn = document.getElementById("deleteSelectedBtn");
+
+const PAGE_RATIO_W = 257;
+const PAGE_RATIO_H = 364;
+const GUTTER = 18;
+const H = 1000;
+const PAGE_W = Math.round((H * PAGE_RATIO_W) / PAGE_RATIO_H);
+const W = PAGE_W * 2 + GUTTER;
+const PAGE_H = H;
+canvas.width = W;
+canvas.height = H;
+
+const HANDLE_SIZE = 12;
+const DELETE_BTN_R = 12;
+
+let currentTool = "mouse";
+let selectedImageSrc = null;
+let pageIndex = 0;
+let drawing = false;
+let activeStroke = null;
+let selectedId = null;
+let interaction = null;
+
+const imageCache = new Map();
+
+const state = {
+  noteTitle: noteTitle.value,
+  subject: subjectSelect.value,
+  subjectOther: "",
+  noteDate: "",
+  pages: [createEmptyPage()],
+};
+
+function getTodayLocalDateString() {
+  const now = new Date();
+  const tzOffset = now.getTimezoneOffset() * 60000;
+  const local = new Date(now.getTime() - tzOffset);
+  return local.toISOString().slice(0, 10);
+}
+
+function getEffectiveSubject() {
+  const s = subjectSelect.value;
+  if (s === "その他") {
+    return subjectOther.value.trim() || "その他";
+  }
+  return s;
+}
+
+function makeBaseFileName() {
+  const dateText = noteDate.value || getTodayLocalDateString();
+  const subjectText = getEffectiveSubject();
+  const titleText = noteTitle.value.trim() || "ノート";
+  return `${dateText}_${subjectText}_${titleText}`.replace(/[\\/:*?"<>|]/g, "_");
+}
+
+function createEmptyPage() {
+  return {
+    strokes: [],
+    elements: [],
+  };
+}
+
+function currentPage() {
+  return state.pages[pageIndex];
+}
+
+function hsla(alpha = 1) {
+  return `hsla(${hueInput.value}, ${satInput.value}%, ${lightInput.value}%, ${alpha})`;
+}
+
+function updateColorPreview() {
+  colorPreview.style.background = hsla(1);
+}
+
+function setTool(tool) {
+  currentTool = tool;
+  toolButtons.forEach((b) => b.classList.toggle("active", b.dataset.tool === tool));
+  if (tool !== "mouse") {
+    selectedId = null;
+  }
+  draw();
+}
+
+function toCanvasPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * W;
+  const y = ((e.clientY - rect.top) / rect.height) * H;
+  return { x, y };
+}
+
+function drawBackground(targetCtx) {
+  targetCtx.fillStyle = "#f2f2f2";
+  targetCtx.fillRect(0, 0, W, H);
+
+  const leftX = 0;
+  const rightX = PAGE_W + GUTTER;
+
+  drawSinglePageBg(targetCtx, leftX);
+  drawSinglePageBg(targetCtx, rightX);
+
+  targetCtx.fillStyle = "#ced3db";
+  targetCtx.fillRect(PAGE_W, 0, GUTTER, H);
+  targetCtx.fillStyle = "rgba(0,0,0,0.15)";
+  targetCtx.fillRect(PAGE_W + GUTTER / 2 - 1, 0, 2, H);
+}
+
+function drawSinglePageBg(targetCtx, x) {
+  targetCtx.save();
+  targetCtx.beginPath();
+  targetCtx.rect(x, 0, PAGE_W, PAGE_H);
+  targetCtx.clip();
+
+  targetCtx.fillStyle = "#ffffff";
+  targetCtx.fillRect(x, 0, PAGE_W, PAGE_H);
+
+  targetCtx.strokeStyle = "rgba(0,0,0,0.15)";
+  targetCtx.strokeRect(x + 0.5, 0.5, PAGE_W - 1, PAGE_H - 1);
+  targetCtx.restore();
+}
+
+function drawStroke(targetCtx, stroke) {
+  if (!stroke.points.length) return;
+  targetCtx.save();
+  targetCtx.lineCap = "round";
+  targetCtx.lineJoin = "round";
+  targetCtx.globalAlpha = stroke.alpha;
+  targetCtx.strokeStyle = stroke.color;
+  targetCtx.lineWidth = stroke.width;
+  targetCtx.beginPath();
+  targetCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+  for (let i = 1; i < stroke.points.length; i++) {
+    targetCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+  }
+  targetCtx.stroke();
+  targetCtx.restore();
+}
+
+function drawElement(targetCtx, el) {
+  if (el.type === "text") {
+    targetCtx.save();
+    targetCtx.font = `${el.fontSize}px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
+    targetCtx.fillStyle = el.color;
+    targetCtx.textBaseline = "top";
+    targetCtx.beginPath();
+    targetCtx.rect(el.x, el.y, el.w, el.h);
+    targetCtx.clip();
+    drawWrappedText(targetCtx, el.text || "", el.x + 6, el.y + 6, Math.max(20, el.w - 12), el.fontSize);
+    targetCtx.restore();
+  }
+
+  if (el.type === "template") {
+    targetCtx.save();
+    targetCtx.font = `${el.fontSize}px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
+    targetCtx.textBaseline = "top";
+    targetCtx.fillStyle = "rgba(255, 80, 80, 0.18)";
+    targetCtx.strokeStyle = "#e23535";
+    targetCtx.lineWidth = 2;
+    targetCtx.fillRect(el.x, el.y, el.w, el.h);
+    targetCtx.strokeRect(el.x, el.y, el.w, el.h);
+    targetCtx.fillStyle = "#b51d1d";
+    targetCtx.beginPath();
+    targetCtx.rect(el.x, el.y, el.w, el.h);
+    targetCtx.clip();
+    drawWrappedText(targetCtx, el.text || "", el.x + 10, el.y + 8, Math.max(20, el.w - 20), el.fontSize);
+    targetCtx.restore();
+  }
+
+  if (el.type === "image") {
+    const img = getCachedImage(el.src);
+    if (img && img.complete && img.naturalWidth) {
+      targetCtx.drawImage(img, el.x, el.y, el.w, el.h);
+    } else {
+      targetCtx.fillStyle = "#d9d9d9";
+      targetCtx.fillRect(el.x, el.y, el.w, el.h);
+      targetCtx.strokeStyle = "#888";
+      targetCtx.strokeRect(el.x, el.y, el.w, el.h);
+      targetCtx.fillStyle = "#555";
+      targetCtx.fillText("loading...", el.x + 8, el.y + 8);
+    }
+  }
+}
+
+function drawSelection(targetCtx, el) {
+  if (!el) return;
+  targetCtx.save();
+  targetCtx.strokeStyle = "#0f6dff";
+  targetCtx.lineWidth = 2;
+  targetCtx.setLineDash([8, 5]);
+  targetCtx.strokeRect(el.x, el.y, el.w, el.h);
+  targetCtx.setLineDash([]);
+
+  const handles = getHandles(el);
+  targetCtx.fillStyle = "#fff";
+  targetCtx.strokeStyle = "#0f6dff";
+  handles.forEach((h) => {
+    targetCtx.fillRect(h.x - HANDLE_SIZE / 2, h.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+    targetCtx.strokeRect(h.x - HANDLE_SIZE / 2, h.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+  });
+
+  const del = getDeleteButton(el);
+  targetCtx.fillStyle = "#e53935";
+  targetCtx.strokeStyle = "#ffffff";
+  targetCtx.lineWidth = 2;
+  targetCtx.beginPath();
+  targetCtx.arc(del.x, del.y, del.r, 0, Math.PI * 2);
+  targetCtx.fill();
+  targetCtx.stroke();
+  targetCtx.strokeStyle = "#ffffff";
+  targetCtx.lineWidth = 2.5;
+  targetCtx.beginPath();
+  targetCtx.moveTo(del.x - 4, del.y - 4);
+  targetCtx.lineTo(del.x + 4, del.y + 4);
+  targetCtx.moveTo(del.x + 4, del.y - 4);
+  targetCtx.lineTo(del.x - 4, del.y + 4);
+  targetCtx.stroke();
+  targetCtx.restore();
+}
+
+function draw() {
+  const page = currentPage();
+  drawBackground(ctx);
+
+  page.strokes.forEach((s) => drawStroke(ctx, s));
+  if (activeStroke) drawStroke(ctx, activeStroke);
+
+  page.elements.forEach((el) => drawElement(ctx, el));
+
+  if (currentTool === "mouse" && selectedId) {
+    const el = page.elements.find((e) => e.id === selectedId);
+    drawSelection(ctx, el);
+  }
+
+  updateUi();
+}
+
+function updateUi() {
+  pageIndicator.textContent = `${pageIndex + 1} / ${state.pages.length}`;
+  updateColorPreview();
+}
+
+function wrapLineByWidth(targetCtx, line, maxWidth) {
+  if (!line) return [""];
+  const chunks = [];
+  let current = "";
+  for (const ch of line) {
+    const trial = current + ch;
+    if (targetCtx.measureText(trial).width <= maxWidth || current.length === 0) {
+      current = trial;
+    } else {
+      chunks.push(current);
+      current = ch;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function drawWrappedText(targetCtx, text, x, y, maxWidth, fontSize) {
+  const lineHeight = Math.round(fontSize * 1.35);
+  const lines = String(text).split("\n");
+  let yPos = y;
+  for (const rawLine of lines) {
+    const wrapped = wrapLineByWidth(targetCtx, rawLine, maxWidth);
+    for (const part of wrapped) {
+      targetCtx.fillText(part, x, yPos);
+      yPos += lineHeight;
+    }
+  }
+}
+
+function getHandles(el) {
+  return [
+    { key: "tl", x: el.x, y: el.y },
+    { key: "tr", x: el.x + el.w, y: el.y },
+    { key: "bl", x: el.x, y: el.y + el.h },
+    { key: "br", x: el.x + el.w, y: el.y + el.h },
+  ];
+}
+
+function getDeleteButton(el) {
+  const x = Math.min(W - DELETE_BTN_R - 2, el.x + el.w + DELETE_BTN_R - 2);
+  const y = Math.max(DELETE_BTN_R + 2, el.y - DELETE_BTN_R + 2);
+  return { x, y, r: DELETE_BTN_R };
+}
+
+function pointInRect(p, el) {
+  return p.x >= el.x && p.x <= el.x + el.w && p.y >= el.y && p.y <= el.y + el.h;
+}
+
+function handleHitTest(p, el) {
+  const handles = getHandles(el);
+  for (const h of handles) {
+    if (
+      p.x >= h.x - HANDLE_SIZE &&
+      p.x <= h.x + HANDLE_SIZE &&
+      p.y >= h.y - HANDLE_SIZE &&
+      p.y <= h.y + HANDLE_SIZE
+    ) {
+      return h.key;
+    }
+  }
+  return null;
+}
+
+function deleteButtonHitTest(p, el) {
+  const d = getDeleteButton(el);
+  const dx = p.x - d.x;
+  const dy = p.y - d.y;
+  return dx * dx + dy * dy <= d.r * d.r;
+}
+
+function findTopElementAt(p) {
+  const arr = currentPage().elements;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (pointInRect(p, arr[i])) return arr[i];
+  }
+  return null;
+}
+
+function startPointer(e) {
+  const p = toCanvasPoint(e);
+
+  if (currentTool === "pen" || currentTool === "marker") {
+    drawing = true;
+    const marker = currentTool === "marker";
+    activeStroke = {
+      color: hsla(1),
+      width: marker ? Math.max(Number(sizeInput.value), 12) : Number(sizeInput.value),
+      alpha: marker ? 0.35 : 1,
+      points: [p],
+    };
+    draw();
+    return;
+  }
+
+  if (currentTool === "eraser") {
+    drawing = true;
+    activeStroke = {
+      color: "#ffffff",
+      width: Math.max(Number(sizeInput.value), 10),
+      alpha: 1,
+      points: [p],
+      isEraser: true,
+    };
+    draw();
+    return;
+  }
+
+  if (currentTool === "text") {
+    const text = prompt("入力する文字を入れてください");
+    if (text && text.trim()) {
+      const el = {
+        id: crypto.randomUUID(),
+        type: "text",
+        text: text.trim(),
+        x: p.x,
+        y: p.y,
+        w: 280,
+        h: 110,
+        fontSize: 34,
+        color: hsla(1),
+      };
+      currentPage().elements.push(el);
+      selectedId = el.id;
+    }
+    draw();
+    return;
+  }
+
+  if (currentTool === "template") {
+    const text = templateSelect.value;
+    ctx.save();
+    ctx.font = `38px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
+    const tw = ctx.measureText(text).width;
+    ctx.restore();
+    const el = {
+      id: crypto.randomUUID(),
+      type: "template",
+      text,
+      x: p.x,
+      y: p.y,
+      w: tw + 36,
+      h: 56,
+      fontSize: 34,
+    };
+    currentPage().elements.push(el);
+    selectedId = el.id;
+    draw();
+    return;
+  }
+
+  if (currentTool === "image") {
+    if (!selectedImageSrc) {
+      alert("先に下の『画像選択』から画像を選んでください。");
+      return;
+    }
+    const img = getCachedImage(selectedImageSrc);
+    const ratio = img && img.naturalWidth ? img.naturalHeight / img.naturalWidth : 0.75;
+    const w = 260;
+    const h = w * ratio;
+    const el = {
+      id: crypto.randomUUID(),
+      type: "image",
+      src: selectedImageSrc,
+      x: p.x,
+      y: p.y,
+      w,
+      h,
+      ratio,
+    };
+    currentPage().elements.push(el);
+    selectedId = el.id;
+    draw();
+    return;
+  }
+
+  if (currentTool === "mouse") {
+    const page = currentPage();
+    if (selectedId) {
+      const selected = page.elements.find((el) => el.id === selectedId);
+      if (selected) {
+        if (deleteButtonHitTest(p, selected)) {
+          deleteSelected();
+          return;
+        }
+        const handle = handleHitTest(p, selected);
+        if (handle) {
+          interaction = {
+            mode: "resize",
+            id: selected.id,
+            handle,
+            start: p,
+            startRect: { x: selected.x, y: selected.y, w: selected.w, h: selected.h },
+            startFont: selected.fontSize,
+          };
+          return;
+        }
+      }
+    }
+
+    const target = findTopElementAt(p);
+    if (target) {
+      selectedId = target.id;
+      const idx = page.elements.findIndex((el) => el.id === target.id);
+      const [pick] = page.elements.splice(idx, 1);
+      page.elements.push(pick);
+      interaction = {
+        mode: "move",
+        id: target.id,
+        offsetX: p.x - target.x,
+        offsetY: p.y - target.y,
+      };
+    } else {
+      selectedId = null;
+    }
+    draw();
+  }
+}
+
+function movePointer(e) {
+  const p = toCanvasPoint(e);
+
+  if (drawing && activeStroke) {
+    activeStroke.points.push(p);
+    draw();
+    return;
+  }
+
+  if (!interaction) return;
+  const el = currentPage().elements.find((x) => x.id === interaction.id);
+  if (!el) return;
+
+  if (interaction.mode === "move") {
+    el.x = p.x - interaction.offsetX;
+    el.y = p.y - interaction.offsetY;
+  }
+
+  if (interaction.mode === "resize") {
+    resizeElement(el, interaction, p);
+  }
+  draw();
+}
+
+function endPointer() {
+  if (drawing && activeStroke) {
+    currentPage().strokes.push(activeStroke);
+  }
+  drawing = false;
+  activeStroke = null;
+  interaction = null;
+  draw();
+}
+
+function resizeElement(el, interactionData, p) {
+  const r = interactionData.startRect;
+
+  let newX = r.x;
+  let newY = r.y;
+  let newW = r.w;
+  let newH = r.h;
+
+  if (interactionData.handle.includes("r")) newW = Math.max(24, p.x - r.x);
+  if (interactionData.handle.includes("l")) {
+    newW = Math.max(24, r.w + (r.x - p.x));
+    newX = r.x + r.w - newW;
+  }
+  if (interactionData.handle.includes("b")) newH = Math.max(24, p.y - r.y);
+  if (interactionData.handle.includes("t")) {
+    newH = Math.max(24, r.h + (r.y - p.y));
+    newY = r.y + r.h - newH;
+  }
+
+  if (el.type === "image") {
+    const ratio = el.ratio || r.h / r.w;
+    newH = newW * ratio;
+  }
+
+  el.x = newX;
+  el.y = newY;
+  el.w = newW;
+  el.h = newH;
+
+  if (el.type === "text" || el.type === "template") {
+    const scale = Math.min(newW / r.w, newH / r.h);
+    el.fontSize = Math.max(12, Math.round(interactionData.startFont * scale));
+  }
+}
+
+function getCachedImage(src) {
+  if (imageCache.has(src)) return imageCache.get(src);
+  const img = new Image();
+  img.src = src;
+  img.onload = () => draw();
+  imageCache.set(src, img);
+  return img;
+}
+
+function deleteSelected() {
+  if (!selectedId) return;
+  const page = currentPage();
+  page.elements = page.elements.filter((e) => e.id !== selectedId);
+  selectedId = null;
+  draw();
+}
+
+function exportJson() {
+  const payload = {
+    noteTitle: noteTitle.value,
+    subject: subjectSelect.value,
+    subjectOther: subjectOther.value,
+    noteDate: noteDate.value,
+    pages: state.pages,
+    exportedAt: new Date().toISOString(),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  const safeName = makeBaseFileName();
+  a.href = URL.createObjectURL(blob);
+  a.download = `${safeName}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importJson(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      if (!Array.isArray(parsed.pages) || parsed.pages.length === 0) {
+        throw new Error("ページデータがありません");
+      }
+      state.pages = parsed.pages.map((p) => ({
+        strokes: Array.isArray(p.strokes) ? p.strokes : [],
+        elements: Array.isArray(p.elements) ? p.elements : [],
+      }));
+      pageIndex = 0;
+      noteTitle.value = parsed.noteTitle || "ノート";
+      subjectSelect.value = parsed.subject || "国語";
+      subjectOther.value = parsed.subjectOther || "";
+      noteDate.value = parsed.noteDate || getTodayLocalDateString();
+      subjectOther.style.display = subjectSelect.value === "その他" ? "inline-block" : "none";
+      selectedId = null;
+      draw();
+    } catch (err) {
+      alert(`読み込みに失敗しました: ${err.message}`);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderPageToDataUrl(page) {
+  const off = document.createElement("canvas");
+  off.width = W;
+  off.height = H;
+  const offCtx = off.getContext("2d");
+  drawBackground(offCtx);
+  page.strokes.forEach((s) => drawStroke(offCtx, s));
+  page.elements.forEach((el) => drawElement(offCtx, { ...el }));
+  return off.toDataURL("image/png");
+}
+
+function exportPdf() {
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert("PDFライブラリの読み込みに失敗しました。ページを再読み込みしてください。");
+    return;
+  }
+  const images = state.pages.map((p) => renderPageToDataUrl(p));
+  const title = makeBaseFileName().replace(/[<>]/g, "");
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({
+    orientation: W >= H ? "landscape" : "portrait",
+    unit: "px",
+    format: [W, H],
+    compress: true,
+  });
+
+  images.forEach((src, idx) => {
+    if (idx > 0) {
+      pdf.addPage([W, H], W >= H ? "landscape" : "portrait");
+    }
+    pdf.addImage(src, "PNG", 0, 0, W, H, undefined, "FAST");
+  });
+
+  pdf.save(`${title}.pdf`);
+}
+
+function addPage() {
+  state.pages.splice(pageIndex + 1, 0, createEmptyPage());
+  pageIndex += 1;
+  selectedId = null;
+  draw();
+}
+
+function removePage() {
+  if (state.pages.length <= 1) {
+    alert("1ページは残す必要があります。");
+    return;
+  }
+  state.pages.splice(pageIndex, 1);
+  pageIndex = Math.max(0, pageIndex - 1);
+  selectedId = null;
+  draw();
+}
+
+function prevPage() {
+  pageIndex = Math.max(0, pageIndex - 1);
+  selectedId = null;
+  draw();
+}
+
+function nextPage() {
+  pageIndex = Math.min(state.pages.length - 1, pageIndex + 1);
+  selectedId = null;
+  draw();
+}
+
+toolButtons.forEach((btn) => btn.addEventListener("click", () => setTool(btn.dataset.tool)));
+[hueInput, satInput, lightInput].forEach((input) => input.addEventListener("input", draw));
+sizeInput.addEventListener("input", draw);
+
+imageInput.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    selectedImageSrc = reader.result;
+    getCachedImage(selectedImageSrc);
+  };
+  reader.readAsDataURL(file);
+});
+
+prevPageBtn.addEventListener("click", prevPage);
+nextPageBtn.addEventListener("click", nextPage);
+addPageBtn.addEventListener("click", addPage);
+removePageBtn.addEventListener("click", removePage);
+
+savePdfBtn.addEventListener("click", exportPdf);
+saveDataBtn.addEventListener("click", exportJson);
+loadDataInput.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (file) importJson(file);
+  e.target.value = "";
+});
+
+deleteSelectedBtn.addEventListener("click", deleteSelected);
+noteTitle.addEventListener("input", () => {
+  state.noteTitle = noteTitle.value;
+});
+
+subjectSelect.addEventListener("change", () => {
+  subjectOther.style.display = subjectSelect.value === "その他" ? "inline-block" : "none";
+  state.subject = subjectSelect.value;
+});
+
+subjectOther.addEventListener("input", () => {
+  state.subjectOther = subjectOther.value;
+});
+
+noteDate.addEventListener("change", () => {
+  state.noteDate = noteDate.value;
+});
+
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Delete" || e.key === "Backspace") && currentTool === "mouse") {
+    const activeTag = document.activeElement?.tagName;
+    if (activeTag !== "INPUT" && activeTag !== "TEXTAREA") {
+      deleteSelected();
+    }
+  }
+});
+
+canvas.addEventListener("pointerdown", startPointer);
+canvas.addEventListener("pointermove", movePointer);
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointerleave", endPointer);
+
+updateColorPreview();
+noteDate.value = getTodayLocalDateString();
+state.noteDate = noteDate.value;
+draw();
