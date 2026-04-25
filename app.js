@@ -24,6 +24,7 @@ const removePageBtn = document.getElementById("removePageBtn");
 
 const savePdfBtn = document.getElementById("savePdfBtn");
 const saveDataBtn = document.getElementById("saveDataBtn");
+const resetNoteBtn = document.getElementById("resetNoteBtn");
 const loadDataInput = document.getElementById("loadDataInput");
 const deleteSelectedBtn = document.getElementById("deleteSelectedBtn");
 
@@ -884,6 +885,15 @@ function nextPage() {
   draw();
 }
 
+function resetNote() {
+  const ok = confirm("ノートを白紙に戻します。よろしいですか？");
+  if (!ok) return;
+  state.pages = state.pages.map(() => createEmptyPage("plain"));
+  pageIndex = 0;
+  selectedId = null;
+  draw();
+}
+
 toolButtons.forEach((btn) => btn.addEventListener("click", () => setTool(btn.dataset.tool)));
 [hueInput, satInput, lightInput].forEach((input) => input.addEventListener("input", draw));
 sizeInput.addEventListener("input", draw);
@@ -913,6 +923,7 @@ removePageBtn.addEventListener("click", removePage);
 
 savePdfBtn.addEventListener("click", exportPdf);
 saveDataBtn.addEventListener("click", exportJson);
+resetNoteBtn.addEventListener("click", resetNote);
 loadDataInput.addEventListener("change", (e) => {
   const file = e.target.files?.[0];
   if (file) importJson(file);
