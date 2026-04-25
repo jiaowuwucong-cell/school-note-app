@@ -84,9 +84,11 @@
           <button class="tool-btn active" data-tool="mouse">マウス</button>
           <button class="tool-btn" data-tool="pen">ペン</button>
           <button class="tool-btn" data-tool="marker">マーカー</button>
+          <button class="tool-btn" data-tool="line">直線</button>
           <button class="tool-btn" data-tool="eraser">消しゴム</button>
           <button class="tool-btn" data-tool="text">テキスト</button>
           <button class="tool-btn" data-tool="template">定型文</button>
+          <button class="tool-btn" data-tool="shape">図形</button>
           <button class="tool-btn" data-tool="image">画像</button>
         </div>
 
@@ -118,6 +120,16 @@
               <option>結論</option>
               <option>問題</option>
               <option>メモ</option>
+            </select>
+          </label>
+
+          <label>図形
+            <select id="shapeSelect">
+              <option value="circle">丸</option>
+              <option value="triangle">三角</option>
+              <option value="square">四角</option>
+              <option value="pentagon">五角形</option>
+              <option value="hexagon">六角形</option>
             </select>
           </label>
 

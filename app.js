@@ -8,6 +8,7 @@ const lightInput = document.getElementById("light");
 const sizeInput = document.getElementById("size");
 const colorPreview = document.getElementById("colorPreview");
 const templateSelect = document.getElementById("templateSelect");
+const shapeSelect = document.getElementById("shapeSelect");
 const imageInput = document.getElementById("imageInput");
 const backgroundType = document.getElementById("backgroundType");
 const subjectSelect = document.getElementById("subjectSelect");
@@ -38,6 +39,8 @@ canvas.height = H;
 
 const HANDLE_SIZE = 12;
 const DELETE_BTN_R = 12;
+const ROTATE_BTN_R = 10;
+const ROTATE_BTN_OFFSET = 26;
 
 let currentTool = "mouse";
 let selectedImageSrc = null;
@@ -106,6 +109,18 @@ function currentPage() {
 
 function hsla(alpha = 1) {
   return `hsla(${hueInput.value}, ${satInput.value}%, ${lightInput.value}%, ${alpha})`;
+}
+
+function hslaFrom(h, s, l, alpha = 1) {
+  return `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
+}
+
+function getCurrentColorObj() {
+  return {
+    h: Number(hueInput.value),
+    s: Number(satInput.value),
+    l: Number(lightInput.value),
+  };
 }
 
 function updateColorPreview() {
@@ -231,12 +246,12 @@ function drawElement(targetCtx, el) {
     targetCtx.scale(sx, sy);
     targetCtx.font = `${el.baseFontSize}px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
     targetCtx.textBaseline = "top";
-    targetCtx.fillStyle = "rgba(255, 80, 80, 0.18)";
-    targetCtx.strokeStyle = "#e23535";
+    targetCtx.fillStyle = hslaFrom(el.hue ?? 0, el.sat ?? 0, el.light ?? 30, 0.2);
+    targetCtx.strokeStyle = hslaFrom(el.hue ?? 0, el.sat ?? 0, el.light ?? 30, 1);
     targetCtx.lineWidth = 2;
     targetCtx.fillRect(0, 0, el.baseW, el.baseH);
     targetCtx.strokeRect(0, 0, el.baseW, el.baseH);
-    targetCtx.fillStyle = "#b51d1d";
+    targetCtx.fillStyle = hslaFrom(el.hue ?? 0, el.sat ?? 0, el.light ?? 30, 1);
     targetCtx.beginPath();
     targetCtx.rect(0, 0, el.baseW, el.baseH);
     targetCtx.clip();
@@ -248,6 +263,21 @@ function drawElement(targetCtx, el) {
       Math.max(20, el.baseW - 20),
       el.baseFontSize,
     );
+    targetCtx.restore();
+  }
+
+  if (el.type === "shape") {
+    targetCtx.save();
+    const cx = el.x + el.w / 2;
+    const cy = el.y + el.h / 2;
+    targetCtx.translate(cx, cy);
+    targetCtx.rotate(el.rotation || 0);
+    targetCtx.strokeStyle = el.color;
+    targetCtx.lineWidth = Math.max(1, el.strokeWidth || 2);
+    targetCtx.fillStyle = hslaFrom(el.hue ?? 0, el.sat ?? 0, el.light ?? 30, 0.14);
+    drawShapePath(targetCtx, el.shapeKind || "square", el.w, el.h);
+    targetCtx.fill();
+    targetCtx.stroke();
     targetCtx.restore();
   }
 
@@ -264,6 +294,26 @@ function drawElement(targetCtx, el) {
       targetCtx.fillText("loading...", el.x + 8, el.y + 8);
     }
   }
+}
+
+function drawShapePath(targetCtx, kind, w, h) {
+  const rw = w / 2;
+  const rh = h / 2;
+  targetCtx.beginPath();
+  if (kind === "circle") {
+    targetCtx.ellipse(0, 0, rw, rh, 0, 0, Math.PI * 2);
+    return;
+  }
+  const sides = kind === "triangle" ? 3 : kind === "pentagon" ? 5 : kind === "hexagon" ? 6 : 4;
+  const start = -Math.PI / 2;
+  for (let i = 0; i < sides; i++) {
+    const a = start + (Math.PI * 2 * i) / sides;
+    const px = Math.cos(a) * rw;
+    const py = Math.sin(a) * rh;
+    if (i === 0) targetCtx.moveTo(px, py);
+    else targetCtx.lineTo(px, py);
+  }
+  targetCtx.closePath();
 }
 
 function drawSelection(targetCtx, el) {
@@ -299,6 +349,17 @@ function drawSelection(targetCtx, el) {
   targetCtx.moveTo(del.x + 4, del.y - 4);
   targetCtx.lineTo(del.x - 4, del.y + 4);
   targetCtx.stroke();
+
+  if (el.type === "shape") {
+    const rot = getRotateButton(el);
+    targetCtx.fillStyle = "#1a73e8";
+    targetCtx.strokeStyle = "#ffffff";
+    targetCtx.lineWidth = 2;
+    targetCtx.beginPath();
+    targetCtx.arc(rot.x, rot.y, rot.r, 0, Math.PI * 2);
+    targetCtx.fill();
+    targetCtx.stroke();
+  }
   targetCtx.restore();
 }
 
@@ -374,6 +435,14 @@ function getDeleteButton(el) {
   return { x, y, r: DELETE_BTN_R };
 }
 
+function getRotateButton(el) {
+  return {
+    x: el.x + el.w / 2,
+    y: el.y - ROTATE_BTN_OFFSET,
+    r: ROTATE_BTN_R,
+  };
+}
+
 function pointInRect(p, el) {
   return p.x >= el.x && p.x <= el.x + el.w && p.y >= el.y && p.y <= el.y + el.h;
 }
@@ -400,6 +469,13 @@ function deleteButtonHitTest(p, el) {
   return dx * dx + dy * dy <= d.r * d.r;
 }
 
+function rotateButtonHitTest(p, el) {
+  const d = getRotateButton(el);
+  const dx = p.x - d.x;
+  const dy = p.y - d.y;
+  return dx * dx + dy * dy <= d.r * d.r;
+}
+
 function findTopElementAt(p) {
   const arr = currentPage().elements;
   for (let i = arr.length - 1; i >= 0; i--) {
@@ -419,6 +495,19 @@ function startPointer(e) {
       width: marker ? Math.max(Number(sizeInput.value), 12) : Number(sizeInput.value),
       alpha: marker ? 0.35 : 1,
       points: [p],
+    };
+    draw();
+    return;
+  }
+
+  if (currentTool === "line") {
+    drawing = true;
+    activeStroke = {
+      color: hsla(1),
+      width: Number(sizeInput.value),
+      alpha: 1,
+      points: [p, p],
+      isLine: true,
     };
     draw();
     return;
@@ -463,6 +552,7 @@ function startPointer(e) {
 
   if (currentTool === "template") {
     const text = templateSelect.value;
+    const c = getCurrentColorObj();
     ctx.save();
     ctx.font = `38px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
     const tw = ctx.measureText(text).width;
@@ -479,6 +569,33 @@ function startPointer(e) {
       baseW: tw + 36,
       baseH: 56,
       baseFontSize: 34,
+      hue: c.h,
+      sat: c.s,
+      light: c.l,
+    };
+    currentPage().elements.push(el);
+    selectedId = el.id;
+    draw();
+    return;
+  }
+
+  if (currentTool === "shape") {
+    const c = getCurrentColorObj();
+    const size = Math.max(2, Number(sizeInput.value));
+    const el = {
+      id: crypto.randomUUID(),
+      type: "shape",
+      shapeKind: shapeSelect.value,
+      x: p.x,
+      y: p.y,
+      w: 180,
+      h: 140,
+      rotation: 0,
+      color: hsla(1),
+      strokeWidth: size,
+      hue: c.h,
+      sat: c.s,
+      light: c.l,
     };
     currentPage().elements.push(el);
     selectedId = el.id;
@@ -520,6 +637,19 @@ function startPointer(e) {
           deleteSelected();
           return;
         }
+        if (selected.type === "shape" && rotateButtonHitTest(p, selected)) {
+          const cx = selected.x + selected.w / 2;
+          const cy = selected.y + selected.h / 2;
+          interaction = {
+            mode: "rotate",
+            id: selected.id,
+            centerX: cx,
+            centerY: cy,
+            startAngle: Math.atan2(p.y - cy, p.x - cx),
+            startRotation: selected.rotation || 0,
+          };
+          return;
+        }
         const handle = handleHitTest(p, selected);
         if (handle) {
           interaction = {
@@ -528,7 +658,6 @@ function startPointer(e) {
             handle,
             start: p,
             startRect: { x: selected.x, y: selected.y, w: selected.w, h: selected.h },
-            startFont: selected.fontSize,
           };
           return;
         }
@@ -558,7 +687,11 @@ function movePointer(e) {
   const p = toCanvasPoint(e);
 
   if (drawing && activeStroke) {
-    activeStroke.points.push(p);
+    if (activeStroke.isLine) {
+      activeStroke.points[1] = p;
+    } else {
+      activeStroke.points.push(p);
+    }
     draw();
     return;
   }
@@ -574,6 +707,11 @@ function movePointer(e) {
 
   if (interaction.mode === "resize") {
     resizeElement(el, interaction, p);
+  }
+
+  if (interaction.mode === "rotate") {
+    const now = Math.atan2(p.y - interaction.centerY, p.x - interaction.centerX);
+    el.rotation = interaction.startRotation + (now - interaction.startAngle);
   }
   draw();
 }
