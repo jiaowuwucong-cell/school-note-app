@@ -9,6 +9,7 @@ const sizeInput = document.getElementById("size");
 const colorPreview = document.getElementById("colorPreview");
 const templateSelect = document.getElementById("templateSelect");
 const imageInput = document.getElementById("imageInput");
+const backgroundType = document.getElementById("backgroundType");
 const subjectSelect = document.getElementById("subjectSelect");
 const subjectOther = document.getElementById("subjectOther");
 const noteDate = document.getElementById("noteDate");
@@ -47,13 +48,25 @@ let selectedId = null;
 let interaction = null;
 
 const imageCache = new Map();
+const backgroundImagePaths = {
+  fourLine: "./assets/alphabet-note-3-1.png",
+  vertical5mm: "./assets/vertical5mm.png",
+};
+const backgroundImageMap = Object.fromEntries(
+  Object.entries(backgroundImagePaths).map(([key, src]) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => draw();
+    return [key, img];
+  }),
+);
 
 const state = {
   noteTitle: noteTitle.value,
   subject: subjectSelect.value,
   subjectOther: "",
   noteDate: "",
-  pages: [createEmptyPage()],
+  pages: [createEmptyPage("plain")],
 };
 
 function getTodayLocalDateString() {
@@ -78,8 +91,9 @@ function makeBaseFileName() {
   return `${dateText}_${subjectText}_${titleText}`.replace(/[\\/:*?"<>|]/g, "_");
 }
 
-function createEmptyPage() {
+function createEmptyPage(background = "plain") {
   return {
+    background,
     strokes: [],
     elements: [],
   };
@@ -113,34 +127,52 @@ function toCanvasPoint(e) {
   return { x, y };
 }
 
-function drawBackground(targetCtx) {
+function drawBackground(targetCtx, page) {
   targetCtx.fillStyle = "#f2f2f2";
   targetCtx.fillRect(0, 0, W, H);
 
   const leftX = 0;
   const rightX = PAGE_W + GUTTER;
 
-  drawSinglePageBg(targetCtx, leftX);
-  drawSinglePageBg(targetCtx, rightX);
+  drawSinglePageBg(targetCtx, page.background, leftX);
+  drawSinglePageBg(targetCtx, page.background, rightX);
+}
 
+function drawCenterBinder(targetCtx) {
   targetCtx.fillStyle = "#ced3db";
   targetCtx.fillRect(PAGE_W, 0, GUTTER, H);
   targetCtx.fillStyle = "rgba(0,0,0,0.15)";
   targetCtx.fillRect(PAGE_W + GUTTER / 2 - 1, 0, 2, H);
 }
 
-function drawSinglePageBg(targetCtx, x) {
+function drawSinglePageBg(targetCtx, type, x) {
   targetCtx.save();
   targetCtx.beginPath();
   targetCtx.rect(x, 0, PAGE_W, PAGE_H);
   targetCtx.clip();
 
-  targetCtx.fillStyle = "#ffffff";
-  targetCtx.fillRect(x, 0, PAGE_W, PAGE_H);
+  const img = backgroundImageMap[type];
+  if (img && img.complete && img.naturalWidth > 0) {
+    drawImageContain(targetCtx, img, x, 0, PAGE_W, PAGE_H);
+  } else {
+    targetCtx.fillStyle = "#ffffff";
+    targetCtx.fillRect(x, 0, PAGE_W, PAGE_H);
+  }
 
   targetCtx.strokeStyle = "rgba(0,0,0,0.15)";
   targetCtx.strokeRect(x + 0.5, 0.5, PAGE_W - 1, PAGE_H - 1);
   targetCtx.restore();
+}
+
+function drawImageContain(targetCtx, img, x, y, w, h) {
+  const scale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * scale;
+  const dh = img.naturalHeight * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  targetCtx.fillStyle = "#ffffff";
+  targetCtx.fillRect(x, y, w, h);
+  targetCtx.drawImage(img, dx, dy, dw, dh);
 }
 
 function drawStroke(targetCtx, stroke) {
@@ -162,31 +194,59 @@ function drawStroke(targetCtx, stroke) {
 
 function drawElement(targetCtx, el) {
   if (el.type === "text") {
+    if (!el.baseW) el.baseW = Math.max(40, el.w);
+    if (!el.baseH) el.baseH = Math.max(30, el.h);
+    if (!el.baseFontSize) el.baseFontSize = el.fontSize || 34;
+    const sx = el.w / el.baseW;
+    const sy = el.h / el.baseH;
     targetCtx.save();
-    targetCtx.font = `${el.fontSize}px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
+    targetCtx.translate(el.x, el.y);
+    targetCtx.scale(sx, sy);
+    targetCtx.font = `${el.baseFontSize}px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
     targetCtx.fillStyle = el.color;
     targetCtx.textBaseline = "top";
     targetCtx.beginPath();
-    targetCtx.rect(el.x, el.y, el.w, el.h);
+    targetCtx.rect(0, 0, el.baseW, el.baseH);
     targetCtx.clip();
-    drawWrappedText(targetCtx, el.text || "", el.x + 6, el.y + 6, Math.max(20, el.w - 12), el.fontSize);
+    drawWrappedText(
+      targetCtx,
+      el.text || "",
+      6,
+      6,
+      Math.max(20, el.baseW - 12),
+      el.baseFontSize,
+    );
     targetCtx.restore();
   }
 
   if (el.type === "template") {
+    if (!el.baseW) el.baseW = Math.max(50, el.w);
+    if (!el.baseH) el.baseH = Math.max(34, el.h);
+    if (!el.baseFontSize) el.baseFontSize = el.fontSize || 34;
+    const sx = el.w / el.baseW;
+    const sy = el.h / el.baseH;
     targetCtx.save();
-    targetCtx.font = `${el.fontSize}px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
+    targetCtx.translate(el.x, el.y);
+    targetCtx.scale(sx, sy);
+    targetCtx.font = `${el.baseFontSize}px "BIZ UDPGothic", "Yu Gothic UI", sans-serif`;
     targetCtx.textBaseline = "top";
     targetCtx.fillStyle = "rgba(255, 80, 80, 0.18)";
     targetCtx.strokeStyle = "#e23535";
     targetCtx.lineWidth = 2;
-    targetCtx.fillRect(el.x, el.y, el.w, el.h);
-    targetCtx.strokeRect(el.x, el.y, el.w, el.h);
+    targetCtx.fillRect(0, 0, el.baseW, el.baseH);
+    targetCtx.strokeRect(0, 0, el.baseW, el.baseH);
     targetCtx.fillStyle = "#b51d1d";
     targetCtx.beginPath();
-    targetCtx.rect(el.x, el.y, el.w, el.h);
+    targetCtx.rect(0, 0, el.baseW, el.baseH);
     targetCtx.clip();
-    drawWrappedText(targetCtx, el.text || "", el.x + 10, el.y + 8, Math.max(20, el.w - 20), el.fontSize);
+    drawWrappedText(
+      targetCtx,
+      el.text || "",
+      10,
+      8,
+      Math.max(20, el.baseW - 20),
+      el.baseFontSize,
+    );
     targetCtx.restore();
   }
 
@@ -243,10 +303,11 @@ function drawSelection(targetCtx, el) {
 
 function draw() {
   const page = currentPage();
-  drawBackground(ctx);
+  drawBackground(ctx, page);
 
   page.strokes.forEach((s) => drawStroke(ctx, s));
   if (activeStroke) drawStroke(ctx, activeStroke);
+  drawCenterBinder(ctx);
 
   page.elements.forEach((el) => drawElement(ctx, el));
 
@@ -260,6 +321,10 @@ function draw() {
 
 function updateUi() {
   pageIndicator.textContent = `${pageIndex + 1} / ${state.pages.length}`;
+  if (backgroundType) {
+    const bg = currentPage().background || "plain";
+    backgroundType.value = backgroundType.querySelector(`option[value="${bg}"]`) ? bg : "plain";
+  }
   updateColorPreview();
 }
 
@@ -383,6 +448,9 @@ function startPointer(e) {
         w: 280,
         h: 110,
         fontSize: 34,
+        baseW: 280,
+        baseH: 110,
+        baseFontSize: 34,
         color: hsla(1),
       };
       currentPage().elements.push(el);
@@ -407,6 +475,9 @@ function startPointer(e) {
       w: tw + 36,
       h: 56,
       fontSize: 34,
+      baseW: tw + 36,
+      baseH: 56,
+      baseFontSize: 34,
     };
     currentPage().elements.push(el);
     selectedId = el.id;
@@ -535,20 +606,10 @@ function resizeElement(el, interactionData, p) {
     newY = r.y + r.h - newH;
   }
 
-  if (el.type === "image") {
-    const ratio = el.ratio || r.h / r.w;
-    newH = newW * ratio;
-  }
-
   el.x = newX;
   el.y = newY;
   el.w = newW;
   el.h = newH;
-
-  if (el.type === "text" || el.type === "template") {
-    const scale = Math.min(newW / r.w, newH / r.h);
-    el.fontSize = Math.max(12, Math.round(interactionData.startFont * scale));
-  }
 }
 
 function getCachedImage(src) {
@@ -595,6 +656,9 @@ function importJson(file) {
         throw new Error("ページデータがありません");
       }
       state.pages = parsed.pages.map((p) => ({
+        background: ["plain", "fourLine", "vertical5mm", "grid5mm"].includes(p.background)
+          ? p.background
+          : "plain",
         strokes: Array.isArray(p.strokes) ? p.strokes : [],
         elements: Array.isArray(p.elements) ? p.elements : [],
       }));
@@ -618,8 +682,9 @@ function renderPageToDataUrl(page) {
   off.width = W;
   off.height = H;
   const offCtx = off.getContext("2d");
-  drawBackground(offCtx);
+  drawBackground(offCtx, page);
   page.strokes.forEach((s) => drawStroke(offCtx, s));
+  drawCenterBinder(offCtx);
   page.elements.forEach((el) => drawElement(offCtx, { ...el }));
   return off.toDataURL("image/png");
 }
@@ -650,7 +715,8 @@ function exportPdf() {
 }
 
 function addPage() {
-  state.pages.splice(pageIndex + 1, 0, createEmptyPage());
+  const bg = currentPage().background || "plain";
+  state.pages.splice(pageIndex + 1, 0, createEmptyPage(bg));
   pageIndex += 1;
   selectedId = null;
   draw();
@@ -693,6 +759,13 @@ imageInput.addEventListener("change", (e) => {
   };
   reader.readAsDataURL(file);
 });
+
+if (backgroundType) {
+  backgroundType.addEventListener("change", () => {
+    currentPage().background = backgroundType.value;
+    draw();
+  });
+}
 
 prevPageBtn.addEventListener("click", prevPage);
 nextPageBtn.addEventListener("click", nextPage);

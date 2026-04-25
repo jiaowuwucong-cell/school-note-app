@@ -175,8 +175,7 @@ button:active {
 }
 
 .canvas-stage {
-  width: min(1120px, calc(100vw - 300px));
-  max-height: calc(100svh - 220px);
+  width: min(1120px, calc(100vw - 300px), calc((100svh - 220px) * 1.43));
   aspect-ratio: 1430 / 1000;
   background: #0f1216;
   border: 1px solid #4f5864;
@@ -288,7 +287,6 @@ button:active {
 
   .canvas-stage {
     margin-left: 0;
-    width: 95vw;
-    max-height: calc(100svh - 260px);
+    width: min(95vw, calc((100svh - 260px) * 1.43));
   }
 }
