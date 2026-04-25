@@ -51,6 +51,7 @@ const imageCache = new Map();
 const backgroundImagePaths = {
   fourLine: "./assets/alphabet-note-3-1.png",
   vertical5mm: "./assets/vertical5mm.png",
+  grid5mm: "./assets/grid5mm.png",
 };
 const backgroundImageMap = Object.fromEntries(
   Object.entries(backgroundImagePaths).map(([key, src]) => {
