@@ -102,10 +102,19 @@ button:active {
 }
 
 .main-area {
+  --topbar-h: 0px;
+  --canvas-chrome-h: 136px;
   display: grid;
-  grid-template-rows: 84px 1fr 118px;
+  grid-template-rows: var(--topbar-h) 1fr 118px;
   min-width: 0;
   min-height: 0;
+  position: relative;
+  transition: grid-template-rows 0.28s ease;
+}
+
+.main-area:not(.top-collapsed) {
+  --topbar-h: 84px;
+  --canvas-chrome-h: 220px;
 }
 
 .top-bar {
@@ -114,6 +123,9 @@ button:active {
   align-items: center;
   border-bottom: 1px solid #616976;
   padding: 10px 14px;
+  height: 100%;
+  overflow: hidden;
+  transition: padding 0.28s ease, border-color 0.28s ease, opacity 0.2s ease;
 }
 
 .meta-row {
@@ -166,6 +178,51 @@ button:active {
   min-width: 200px;
 }
 
+.top-menu-toggle {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  width: 34px;
+  height: 22px;
+  border-radius: 0 0 8px 8px;
+  background: rgba(120, 124, 130, 0.95);
+  border: 1px solid #616976;
+  border-top: none;
+  display: grid;
+  place-items: center;
+  z-index: 20;
+  transition: top 0.28s ease, background-color 0.28s ease;
+}
+
+.top-menu-toggle:active {
+  transform: translateX(-50%);
+}
+
+.top-menu-toggle .triangle {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #101317;
+}
+
+.main-area:not(.top-collapsed) .top-menu-toggle {
+  top: 83px;
+}
+
+.main-area:not(.top-collapsed) .top-menu-toggle .triangle {
+  border-top: none;
+  border-bottom: 8px solid #101317;
+}
+
+.main-area.top-collapsed .top-bar {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  opacity: 0;
+}
+
 .canvas-wrap {
   display: grid;
   align-items: center;
@@ -175,7 +232,7 @@ button:active {
 }
 
 .canvas-stage {
-  width: min(1120px, calc(100vw - 300px), calc((100svh - 220px) * 1.43));
+  width: min(1120px, calc(100vw - 300px), calc((100svh - var(--canvas-chrome-h)) * 1.43));
   aspect-ratio: 1430 / 1000;
   background: #0f1216;
   border: 1px solid #4f5864;
@@ -261,11 +318,21 @@ button:active {
   }
 
   .main-area {
+    --canvas-chrome-h: 260px;
     grid-template-rows: auto 1fr auto;
+    transition: none;
+  }
+
+  .main-area.top-collapsed {
+    --canvas-chrome-h: 188px;
   }
 
   .top-bar {
     padding: 8px;
+  }
+
+  .main-area:not(.top-collapsed) .top-menu-toggle {
+    top: 70px;
   }
 
   .meta-row {
@@ -287,6 +354,6 @@ button:active {
 
   .canvas-stage {
     margin-left: 0;
-    width: min(95vw, calc((100svh - 260px) * 1.43));
+    width: min(95vw, calc((100svh - var(--canvas-chrome-h)) * 1.43));
   }
 }

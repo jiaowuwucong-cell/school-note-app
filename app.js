@@ -15,6 +15,8 @@ const subjectSelect = document.getElementById("subjectSelect");
 const subjectOther = document.getElementById("subjectOther");
 const noteDate = document.getElementById("noteDate");
 const noteTitle = document.getElementById("noteTitle");
+const mainArea = document.getElementById("mainArea");
+const topMenuToggle = document.getElementById("topMenuToggle");
 
 const pageIndicator = document.getElementById("pageIndicator");
 const prevPageBtn = document.getElementById("prevPageBtn");
@@ -885,6 +887,12 @@ function nextPage() {
   draw();
 }
 
+function setTopMenuCollapsed(collapsed) {
+  if (!mainArea || !topMenuToggle) return;
+  mainArea.classList.toggle("top-collapsed", collapsed);
+  topMenuToggle.setAttribute("aria-label", collapsed ? "上部メニューを表示" : "上部メニューを隠す");
+}
+
 function resetNote() {
   const ok = confirm("ノートを白紙に戻します。よろしいですか？");
   if (!ok) return;
@@ -948,6 +956,13 @@ noteDate.addEventListener("change", () => {
   state.noteDate = noteDate.value;
 });
 
+if (topMenuToggle) {
+  topMenuToggle.addEventListener("click", () => {
+    const collapsed = mainArea.classList.contains("top-collapsed");
+    setTopMenuCollapsed(!collapsed);
+  });
+}
+
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Delete" || e.key === "Backspace") && currentTool === "mouse") {
     const activeTag = document.activeElement?.tagName;
@@ -965,4 +980,5 @@ canvas.addEventListener("pointerleave", endPointer);
 updateColorPreview();
 noteDate.value = getTodayLocalDateString();
 state.noteDate = noteDate.value;
+setTopMenuCollapsed(true);
 draw();
