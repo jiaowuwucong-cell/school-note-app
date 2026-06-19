@@ -487,6 +487,62 @@ function findTopElementAt(p) {
   return null;
 }
 
+function expandStrokePoints(stroke) {
+  if (!stroke.points || stroke.points.length < 2) return stroke.points || [];
+  const expanded = [stroke.points[0]];
+  const step = Math.max(3, (stroke.width || 4) / 2);
+
+  for (let i = 1; i < stroke.points.length; i++) {
+    const from = stroke.points[i - 1];
+    const to = stroke.points[i];
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const distance = Math.hypot(dx, dy);
+    const pieces = Math.max(1, Math.ceil(distance / step));
+
+    for (let j = 1; j <= pieces; j++) {
+      expanded.push({
+        x: from.x + (dx * j) / pieces,
+        y: from.y + (dy * j) / pieces,
+      });
+    }
+  }
+
+  return expanded;
+}
+
+function eraseAtPoint(p) {
+  const radius = Math.max(8, Number(sizeInput.value) * 2);
+  const radiusSq = radius * radius;
+  const nextStrokes = [];
+
+  for (const stroke of currentPage().strokes) {
+    const points = expandStrokePoints(stroke);
+    let segment = [];
+
+    for (const pt of points) {
+      const dx = pt.x - p.x;
+      const dy = pt.y - p.y;
+      const hit = dx * dx + dy * dy <= radiusSq;
+
+      if (hit) {
+        if (segment.length >= 2) {
+          nextStrokes.push({ ...stroke, points: segment, isLine: false });
+        }
+        segment = [];
+      } else {
+        segment.push(pt);
+      }
+    }
+
+    if (segment.length >= 2) {
+      nextStrokes.push({ ...stroke, points: segment, isLine: false });
+    }
+  }
+
+  currentPage().strokes = nextStrokes;
+}
+
 function startPointer(e) {
   const p = toCanvasPoint(e);
 
@@ -518,13 +574,8 @@ function startPointer(e) {
 
   if (currentTool === "eraser") {
     drawing = true;
-    activeStroke = {
-      color: "#ffffff",
-      width: Math.max(Number(sizeInput.value), 10),
-      alpha: 1,
-      points: [p],
-      isEraser: true,
-    };
+    activeStroke = null;
+    eraseAtPoint(p);
     draw();
     return;
   }
@@ -689,6 +740,12 @@ function startPointer(e) {
 function movePointer(e) {
   const p = toCanvasPoint(e);
 
+  if (drawing && currentTool === "eraser") {
+    eraseAtPoint(p);
+    draw();
+    return;
+  }
+
   if (drawing && activeStroke) {
     if (activeStroke.isLine) {
       activeStroke.points[1] = p;
@@ -721,7 +778,11 @@ function movePointer(e) {
 
 function endPointer() {
   if (drawing && activeStroke) {
-    currentPage().strokes.push(activeStroke);
+    currentPage().strokes.push(
+      activeStroke.isLine
+        ? { ...activeStroke, points: expandStrokePoints(activeStroke), isLine: false }
+        : activeStroke,
+    );
   }
   drawing = false;
   activeStroke = null;
